@@ -4,13 +4,7 @@ import {
   MdMail,
   MdRocketLaunch,
   MdOutlineSmartToy,
-  MdCalendarMonth,
   MdGroups,
-  MdQueryStats,
-  MdBolt,
-  MdSettings,
-  MdSupportAgent,
-  MdPersonAddAlt,
   MdLogout,
 } from "react-icons/md";
 import { useNavigate, useLocation } from "react-router-dom";

@@ -53,7 +53,7 @@ export default function Chatbots() {
     }
     setDebugInfo(out);
   };
-  useEffect(() => { if (debugOpen) updateDebug(); }, [messages, debugOpen, sessionId]);
+  useEffect(() => { if (debugOpen) updateDebug(); }, [messages, debugOpen, sessionId, updateDebug]);
 
   // Reset chat
   const resetChat = () => {

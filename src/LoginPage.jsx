@@ -18,8 +18,6 @@ export default function LoginPage() {
         body: JSON.stringify({ username, password }),
       });
 
-      const data = await response.json();
-
       if (response.ok) {
         // Save login state and username
         localStorage.setItem("isLoggedIn", "true");
