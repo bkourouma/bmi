@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 
 // Base URL: falls back to localhost in development, or uses Azure setting in production
-const BASE_URL = "https://gray-flower-082a73c10.6.azurestaticapps.net" || "http://localhost:6688";
+const BASE_URL = "bmi-chatboy-azcrdhbrc3h6eqc3.westeurope-01.azurewebsites.net" || "http://localhost:6688";
 const API_URL        = `${BASE_URL}/chat`;
 const EXTRACT_NAME   = `${BASE_URL}/extract_name`;
 const SET_NAME       = `${BASE_URL}/set_user_name`;
