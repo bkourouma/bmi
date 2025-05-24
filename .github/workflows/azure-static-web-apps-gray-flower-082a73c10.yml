@@ -1,53 +1,42 @@
+# .github/workflows/azure-static-web-apps.yml
 name: Azure Static Web Apps CI/CD
 
-# Run on pushes to main and on pull requests against main
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
   pull_request:
-    branches:
-      - main
+    branches: [ main ]
     types: [opened, synchronize, reopened]
 
 jobs:
-  build_and_deploy_job:
+  build_and_deploy:
     runs-on: ubuntu-latest
-
-    # Necessary permissions for OIDC & repo content read
     permissions:
       id-token: write
       contents: read
 
     steps:
-      # 1) Check out your repo
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v3
 
-      # 2) Use Node.js 18
-      - name: Set up Node.js
+      - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: "18"
+          node-version: '18'
 
-      # 3) Install npm dependencies
       - name: Install dependencies
         run: npm ci
-        working-directory: ./webUi/front
 
-      # 4) Bake in production env and build
-      - name: Build application
+      - name: Inject production env and build
         run: |
-          # Write the production API URL into .env.production
           echo "REACT_APP_API_BASE_URL=${{ secrets.REACT_APP_API_BASE_URL }}" > .env.production
           npm run build
-        working-directory: ./webUi/front
 
-      # 5) Deploy the built 'build' folder to your Static Web App
       - name: Deploy to Azure Static Web Apps
         uses: Azure/static-web-apps-deploy@v1
         with:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
           action: upload
-          app_location: "./webUi/front/build"
-          skip_app_build: true
+          app_location: "/"         # repo root
+          skip_app_build: true      # we already ran npm run build
+          output_location: "build"  # CRA output
