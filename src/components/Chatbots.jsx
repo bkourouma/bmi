@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 
 // You may want to put the API URLs in an .env or config file
 const API_URL = "http://localhost:6688/chat";
@@ -37,7 +37,7 @@ export default function Chatbots() {
   }, [messages]);
 
   // Debug info fetcher
-  const updateDebug = async () => {
+  const updateDebug = useCallback(async () => {
     const front = { sessionId, userName, chatHistory: messages };
     let out = "=== Front-end ===\n" + JSON.stringify(front, null, 2);
     try {
@@ -52,7 +52,8 @@ export default function Chatbots() {
       out += `\n\n[Back] Erreur réseau: ${err}`;
     }
     setDebugInfo(out);
-  };
+  }, [sessionId, userName, messages]);
+
   useEffect(() => { if (debugOpen) updateDebug(); }, [messages, debugOpen, sessionId, updateDebug]);
 
   // Reset chat
