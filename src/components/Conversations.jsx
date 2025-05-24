@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 
-const API_BASE_URL = "http://127.0.0.1:8088";
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || "http://127.0.0.1:8088";
 
 const Conversations = () => {
   // State
@@ -55,6 +55,7 @@ const Conversations = () => {
       setConvos(sortedData);
       setSelectedConvos([]); // Reset selections when fetching new data
     } catch (err) {
+      console.error("Error fetching conversations:", err);
       setError("Erreur lors du chargement des conversations");
     } finally {
       setIsLoading(false);
@@ -67,16 +68,19 @@ const Conversations = () => {
   const handleDelete = async (id) => {
     if (!window.confirm("Supprimer cette ligne ?")) return;
     try {
+      setIsLoading(true);
       const response = await fetch(`${API_BASE_URL}/conversations/${id}`, {
         method: "DELETE",
       });
       if (response.ok) {
         await fetchConversations();
       } else {
-        throw new Error();
+        throw new Error("Failed to delete");
       }
-    } catch {
+    } catch (err) {
+      console.error("Delete error:", err);
       alert("Erreur lors de la suppression");
+      setIsLoading(false);
     }
   };
 
@@ -88,6 +92,7 @@ const Conversations = () => {
     if (!window.confirm(`Supprimer ${selectedConvos.length} conversation(s) ?`)) return;
     
     try {
+      setIsLoading(true);
       const deletePromises = selectedConvos.map(id =>
         fetch(`${API_BASE_URL}/conversations/${id}`, {
           method: "DELETE",
@@ -96,8 +101,10 @@ const Conversations = () => {
       
       await Promise.all(deletePromises);
       await fetchConversations();
-    } catch {
+    } catch (err) {
+      console.error("Bulk delete error:", err);
       alert("Erreur lors de la suppression");
+      setIsLoading(false);
     }
   };
 
@@ -164,6 +171,7 @@ const Conversations = () => {
    */
   const saveEdit = async () => {
     try {
+      setIsLoading(true);
       const response = await fetch(
         `${API_BASE_URL}/conversations/${editModal.convoId}`,
         {
@@ -184,7 +192,9 @@ const Conversations = () => {
         throw new Error("Erreur lors de la modification");
       }
     } catch (err) {
+      console.error("Edit error:", err);
       alert("Erreur lors de la modification");
+      setIsLoading(false);
     }
   };
 
@@ -193,31 +203,45 @@ const Conversations = () => {
    */
   const handleExport = () => {
     if (!convos.length) return;
-    const csvRows = [
-      [
-        "ID",
-        "Session",
-        "Horodatage",
-        "Message",
-        "Rôle",
-        "Utilisateur",
-      ].join(","),
-      ...convos.map((c) =>
+    
+    try {
+      const csvRows = [
         [
-          c.id,
-          c.session_id,
-          `"${formatDate(c.timestamp)}"`,
-          `"${(c.message || "").replace(/"/g, '""')}"`,
-          c.role,
-          c.user_name || "",
-        ].join(",")
-      ),
-    ];
-    const blob = new Blob([csvRows.join("\n")], { type: "text/csv" });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = "conversations.csv";
-    link.click();
+          "ID",
+          "Session",
+          "Horodatage",
+          "Message",
+          "Rôle",
+          "Utilisateur",
+        ].join(","),
+        ...convos.map((c) =>
+          [
+            c.id,
+            c.session_id,
+            `"${formatDate(c.timestamp)}"`,
+            `"${(c.message || "").replace(/"/g, '""')}"`, // Escape quotes for CSV
+            c.role,
+            c.user_name || "",
+          ].join(",")
+        ),
+      ];
+      
+      const blob = new Blob([csvRows.join("\n")], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const timestamp = new Date().toISOString().split('T')[0];
+      
+      link.href = url;
+      link.download = `conversations_${timestamp}.csv`;
+      link.style.display = "none";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Export error:", err);
+      alert("Erreur lors de l'exportation");
+    }
   };
 
   /**
@@ -234,6 +258,7 @@ const Conversations = () => {
     }
   };
 
+  // Load conversations on component mount
   useEffect(() => {
     fetchConversations();
   }, [fetchConversations]);
@@ -260,21 +285,26 @@ const Conversations = () => {
             <div className="flex gap-2">
               <button
                 onClick={handleExport}
-                className="inline-flex items-center px-4 py-2 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700"
+                disabled={convos.length === 0}
+                className={`inline-flex items-center px-4 py-2 border border-transparent text-base font-medium rounded-md shadow-sm text-white ${
+                  convos.length === 0 
+                    ? 'bg-green-400 cursor-not-allowed' 
+                    : 'bg-green-600 hover:bg-green-700'
+                } transition-colors duration-200`}
               >
                 Exporter CSV
               </button>
               {selectedConvos.length > 0 && (
                 <button
                   onClick={handleBulkDelete}
-                  className="inline-flex items-center px-4 py-2 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-red-600 hover:bg-red-700"
+                  className="inline-flex items-center px-4 py-2 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-red-600 hover:bg-red-700 transition-colors duration-200"
                 >
                   Supprimer ({selectedConvos.length})
                 </button>
               )}
             </div>
             {/* Filter Inputs Right */}
-            <div className="flex gap-4 items-end">
+            <div className="flex gap-4 items-end flex-wrap sm:flex-nowrap">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Date de début
@@ -299,7 +329,7 @@ const Conversations = () => {
               </div>
               <button
                 onClick={fetchConversations}
-                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700"
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 transition-colors duration-200"
               >
                 Filtrer
               </button>
@@ -309,7 +339,14 @@ const Conversations = () => {
 
         {error && (
           <div className="mb-6 bg-red-50 border border-red-200 rounded-md p-4">
-            <div className="text-red-800">{error}</div>
+            <div className="flex">
+              <div className="flex-shrink-0">
+                <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="ml-3 text-red-800">{error}</div>
+            </div>
           </div>
         )}
 
@@ -321,7 +358,10 @@ const Conversations = () => {
           </div>
 
           {isLoading ? (
-            <div className="text-center py-8">Chargement…</div>
+            <div className="text-center py-8">
+              <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-500 mx-auto mb-4"></div>
+              <div className="text-gray-600">Chargement...</div>
+            </div>
           ) : convos.length === 0 ? (
             <div className="text-center py-12">
               <svg
@@ -340,6 +380,9 @@ const Conversations = () => {
               <h3 className="mt-2 text-sm font-medium text-gray-900">
                 Aucune conversation
               </h3>
+              <p className="mt-1 text-sm text-gray-500">
+                Aucune conversation n'a été trouvée pour la période sélectionnée.
+              </p>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -379,7 +422,7 @@ const Conversations = () => {
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {convos.map((c) => (
-                    <tr key={c.id} className="hover:bg-gray-50">
+                    <tr key={c.id} className="hover:bg-gray-50 transition-colors duration-150">
                       <td className="px-4 py-2">
                         <input
                           type="checkbox"
@@ -388,22 +431,32 @@ const Conversations = () => {
                           className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                         />
                       </td>
-                      <td className="px-4 py-2">{c.id}</td>
-                      <td className="px-4 py-2">{c.session_id}</td>
-                      <td className="px-4 py-2">{formatDate(c.timestamp)}</td>
-                      <td className="px-4 py-2">{c.message}</td>
-                      <td className="px-4 py-2">{c.role}</td>
-                      <td className="px-4 py-2">{c.user_name}</td>
+                      <td className="px-4 py-2 text-sm">{c.id}</td>
+                      <td className="px-4 py-2 text-sm">{c.session_id}</td>
+                      <td className="px-4 py-2 text-sm text-gray-500">{formatDate(c.timestamp)}</td>
                       <td className="px-4 py-2">
+                        <div className="text-sm max-w-xs truncate">{c.message}</div>
+                      </td>
+                      <td className="px-4 py-2">
+                        <span className={`px-2 py-1 text-xs rounded-full ${
+                          c.role === 'user' 
+                            ? 'bg-blue-100 text-blue-800' 
+                            : 'bg-green-100 text-green-800'
+                        }`}>
+                          {c.role}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2 text-sm text-gray-500">{c.user_name || '-'}</td>
+                      <td className="px-4 py-2 whitespace-nowrap text-sm font-medium">
                         <button
                           onClick={() => openEditModal(c)}
-                          className="text-indigo-600 hover:text-indigo-900 mr-3"
+                          className="text-indigo-600 hover:text-indigo-900 mr-3 transition-colors duration-150"
                         >
                           Modifier
                         </button>
                         <button
                           onClick={() => handleDelete(c.id)}
-                          className="text-red-600 hover:text-red-900"
+                          className="text-red-600 hover:text-red-900 transition-colors duration-150"
                         >
                           Supprimer
                         </button>
@@ -443,13 +496,16 @@ const Conversations = () => {
                   <label htmlFor="edit-role" className="block text-sm font-medium text-gray-700 mb-1">
                     Rôle
                   </label>
-                  <input
+                  <select
                     id="edit-role"
-                    type="text"
                     value={editModal.role}
                     onChange={(e) => handleEditInputChange("role", e.target.value)}
                     className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 p-3"
-                  />
+                  >
+                    <option value="user">user</option>
+                    <option value="assistant">assistant</option>
+                    <option value="system">system</option>
+                  </select>
                 </div>
                 <div>
                   <label htmlFor="edit-user" className="block text-sm font-medium text-gray-700 mb-1">
@@ -468,13 +524,13 @@ const Conversations = () => {
               <div className="px-6 py-4 bg-gray-50 flex justify-end space-x-3 rounded-b-lg">
                 <button
                   onClick={closeEditModal}
-                  className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                  className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-150"
                 >
                   Annuler
                 </button>
                 <button
                   onClick={saveEdit}
-                  className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-150"
                 >
                   Enregistrer
                 </button>

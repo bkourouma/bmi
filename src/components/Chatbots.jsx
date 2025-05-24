@@ -1,20 +1,32 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
+import { CgSpinner } from "react-icons/cg";
+import { FiSend, FiRefreshCw, FiSettings } from "react-icons/fi";
+import { marked } from 'marked';
 
-// Base URL: falls back to localhost in development, or uses Azure setting in production
-const BASE_URL = process.env.REACT_APP_API_BASE_URL || "http://localhost:6688";
+// Base URL: falls back to localhost in development, or uses env setting in production
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || "http://127.0.0.1:8088";
 
-const API_URL        = `${BASE_URL}/chat`;
-const EXTRACT_NAME   = `${BASE_URL}/extract_name`;
-const SET_NAME       = `${BASE_URL}/set_user_name`;
-const DEBUG_ENDPOINT = `${BASE_URL}/debug/session/`;
+const API_URL = `${API_BASE_URL}/chat`;
+const EXTRACT_NAME = `${API_BASE_URL}/extract_name`;
+const SET_NAME = `${API_BASE_URL}/set_user_name`;
+const DEBUG_ENDPOINT = `${API_BASE_URL}/debug/session/`;
 
+// Function to parse markdown text
 function parseMarkdown(md) {
   // Use Marked.js if available; fallback to simple newlines
-  if (window.marked) return window.marked.parse(md);
+  if (marked) {
+    try {
+      return marked.parse(md);
+    } catch (err) {
+      console.error("Error parsing markdown:", err);
+      return md.replace(/\n/g, "<br/>");
+    }
+  }
   return md.replace(/\n/g, "<br/>");
 }
 
-export default function Chatbots() {
+export default function Chatbot() {
+  // State management
   const [messages, setMessages] = useState(() =>
     JSON.parse(localStorage.getItem("chat_history") || "[]")
   );
@@ -25,17 +37,22 @@ export default function Chatbots() {
   const [userName, setUserName] = useState(() =>
     localStorage.getItem("user_name") || ""
   );
-  const [debugOpen, setDebugOpen] = useState(true);
+  const [debugOpen, setDebugOpen] = useState(false);
   const [debugInfo, setDebugInfo] = useState("");
-  const chatBoxRef = useRef();
+  const [isLoading, setIsLoading] = useState(false);
+  
+  const chatBoxRef = useRef(null);
+  const inputRef = useRef(null);
 
   // Persist session and history
   useEffect(() => {
     localStorage.setItem("chat_session_id", sessionId);
   }, [sessionId]);
+  
   useEffect(() => {
     localStorage.setItem("chat_history", JSON.stringify(messages));
   }, [messages]);
+  
   useEffect(() => {
     if (userName) localStorage.setItem("user_name", userName);
   }, [userName]);
@@ -47,10 +64,18 @@ export default function Chatbots() {
     }
   }, [messages]);
 
+  // Focus on input when page loads
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, []);
+
   // Fetch debug info from backend
   const updateDebug = useCallback(async () => {
     const front = { sessionId, userName, chatHistory: messages };
     let out = "=== Front-end ===\n" + JSON.stringify(front, null, 2);
+    
     try {
       const res = await fetch(`${DEBUG_ENDPOINT}${sessionId}`);
       if (res.ok) {
@@ -62,6 +87,7 @@ export default function Chatbots() {
     } catch (err) {
       out += `\n\n[Back] Erreur réseau: ${err}`;
     }
+    
     setDebugInfo(out);
   }, [sessionId, userName, messages]);
 
@@ -71,16 +97,28 @@ export default function Chatbots() {
 
   // Reset chat
   const resetChat = () => {
+    if (!window.confirm("Êtes-vous sûr de vouloir réinitialiser la conversation ?")) {
+      return;
+    }
+    
     localStorage.removeItem("chat_history");
     localStorage.removeItem("user_name");
+    
     const newSession = `sess_${Date.now()}`;
     setSessionId(newSession);
     setMessages([]);
     setUserName("");
+    
+    // Add initial greeting
     addMessage(
       "Je suis Akissi, votre assistante chez BMI Côte d'Ivoire. Pour commencer, puis-je avoir votre prénom ?",
       "bot"
     );
+    
+    // Focus on input
+    if (inputRef.current) {
+      inputRef.current.focus();
+    }
   };
 
   // Helper to add a message
@@ -91,55 +129,72 @@ export default function Chatbots() {
   // Send handler
   const handleSend = async () => {
     const userInput = input.trim();
-    if (!userInput) return;
+    if (!userInput || isLoading) return;
+    
     setInput("");
     addMessage(userInput, "user");
+    setIsLoading(true);
 
-    // Name extraction flow
-    if (!userName) {
-      try {
-        const res = await fetch(EXTRACT_NAME, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ session_id: sessionId, question: userInput }),
-        });
-        const { name } = await res.json();
-        if (name) {
-          setUserName(name);
-          await fetch(SET_NAME, {
+    try {
+      // Name extraction flow
+      if (!userName) {
+        try {
+          const res = await fetch(EXTRACT_NAME, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ session_id: sessionId, name }),
+            body: JSON.stringify({ session_id: sessionId, question: userInput }),
           });
-          const greeting = `${name}, comment puis-je vous aider aujourd'hui ?`;
-          addMessage(greeting, "bot");
+          
+          if (!res.ok) {
+            throw new Error(`Server responded with ${res.status}`);
+          }
+          
+          const { name } = await res.json();
+          if (name) {
+            setUserName(name);
+            
+            await fetch(SET_NAME, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ session_id: sessionId, name }),
+            });
+            
+            const greeting = `${name}, comment puis-je vous aider aujourd'hui ?`;
+            addMessage(greeting, "bot");
+            setIsLoading(false);
+            return;
+          }
+        } catch (err) {
+          console.error("Name extraction error:", err);
+          addMessage("Erreur lors de la détection du prénom. Comment puis-je vous aider ?", "bot");
+          setIsLoading(false);
           return;
         }
-      } catch {
-        addMessage("Erreur lors de la détection du prénom.", "bot");
       }
-    }
 
-    // Usual chat flow
-    addMessage("💭...", "bot");
-    try {
+      // Usual chat flow
       const res = await fetch(API_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ session_id: sessionId, question: userInput }),
       });
+      
+      if (!res.ok) {
+        throw new Error(`Server responded with ${res.status}`);
+      }
+      
       const data = await res.json();
-      setMessages((msgs) => {
-        const copy = [...msgs];
-        copy.pop(); // remove placeholder
-        return [...copy, { role: "bot", content: data.answer }];
-      });
+      addMessage(data.answer, "bot");
     } catch (err) {
-      setMessages((msgs) => {
-        const copy = [...msgs];
-        copy.pop();
-        return [...copy, { role: "bot", content: "❌ Erreur API: " + err }];
-      });
+      console.error("Chat error:", err);
+      addMessage(`❌ Erreur: ${err.message || "Problème de connexion au serveur"}`, "bot");
+    } finally {
+      setIsLoading(false);
+      
+      // Focus back on input
+      if (inputRef.current) {
+        inputRef.current.focus();
+      }
     }
   };
 
@@ -151,139 +206,100 @@ export default function Chatbots() {
         "bot"
       );
     }
-    // eslint-disable-next-line
   }, []);
 
   return (
-    <div style={{ maxWidth: 800, margin: "0 auto", padding: 24 }}>
-      <h2 style={{ textAlign: "center", marginBottom: 24 }}>
+    <div className="max-w-4xl mx-auto p-4 sm:p-6 md:p-8 flex flex-col h-screen">
+      <h2 className="text-2xl font-bold text-gray-900 mb-6 text-center">
         💬 Chatbot BMI Côte d'Ivoire
       </h2>
+      
+      {/* Chat container */}
       <div
         ref={chatBoxRef}
-        style={{
-          background: "#fff",
-          borderRadius: 8,
-          padding: 20,
-          height: 380,
-          overflowY: "auto",
-          marginBottom: 16,
-          boxShadow: "0 2px 8px #0001",
-          display: "flex",
-          flexDirection: "column",
-        }}
+        className="flex-1 bg-white rounded-lg shadow-md p-4 sm:p-6 overflow-y-auto mb-4 flex flex-col"
       >
         {messages.map((msg, idx) => (
           <div
             key={idx}
-            className={msg.role === "user" ? "user" : "bot"}
-            style={{
-              alignSelf:
-                msg.role === "user" ? "flex-end" : "flex-start",
-              background:
-                msg.role === "user" ? "#d1e7dd" : "#e0f7fa",
-              padding: "0.75rem",
-              borderRadius: 8,
-              margin: "0.5rem 0",
-              maxWidth: "75%",
-              textAlign:
-                msg.role === "user" ? "right" : "left",
-              whiteSpace: "pre-wrap",
-            }}
-            dangerouslySetInnerHTML={{
-              __html: parseMarkdown(msg.content),
-            }}
-          />
+            className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"} mb-4`}
+          >
+            <div
+              className={`rounded-lg px-4 py-2 max-w-[80%] shadow-sm ${
+                msg.role === "user" 
+                  ? "bg-blue-100 text-blue-800" 
+                  : "bg-gray-100 text-gray-800"
+              }`}
+            >
+              <div
+                className="prose"
+                dangerouslySetInnerHTML={{
+                  __html: parseMarkdown(msg.content),
+                }}
+              />
+            </div>
+          </div>
         ))}
+        
+        {isLoading && (
+          <div className="flex justify-start mb-4">
+            <div className="bg-gray-100 text-gray-800 rounded-lg px-4 py-2 flex items-center">
+              <CgSpinner className="animate-spin mr-2" />
+              <span>Akissi réfléchit...</span>
+            </div>
+          </div>
+        )}
       </div>
-      <div style={{ display: "flex", gap: 8 }}>
+      
+      {/* Input area */}
+      <div className="flex items-center gap-2">
         <input
+          ref={inputRef}
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) =>
-            e.key === "Enter" ? handleSend() : null
-          }
+          onKeyDown={(e) => e.key === "Enter" && !e.shiftKey ? handleSend() : null}
           placeholder="Votre message…"
-          style={{
-            flex: 1,
-            padding: "0.5rem",
-            fontSize: "1rem",
-            borderRadius: 6,
-            border: "1px solid #bbb",
-          }}
+          className="flex-1 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 py-3 px-4"
+          disabled={isLoading}
         />
         <button
           onClick={handleSend}
-          style={{
-            padding: "0.5rem 1.2rem",
-            fontSize: "1rem",
-            background: "#005baa",
-            color: "#fff",
-            border: "none",
-            borderRadius: 6,
-            cursor: "pointer",
-          }}
+          disabled={!input.trim() || isLoading}
+          className="inline-flex items-center justify-center bg-blue-600 text-white rounded-md p-3 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
+          title="Envoyer"
         >
-          Envoyer
+          <FiSend className="w-5 h-5" />
         </button>
         <button
           onClick={resetChat}
-          style={{
-            background: "#ff6b6b",
-            color: "#fff",
-            padding: "0.5rem 0.7rem",
-            fontSize: "1rem",
-            border: "none",
-            borderRadius: 6,
-            cursor: "pointer",
-          }}
+          className="inline-flex items-center justify-center bg-red-500 text-white rounded-md p-3 hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-colors duration-200"
           title="Réinitialiser le chat"
         >
-          ⟲
+          <FiRefreshCw className="w-5 h-5" />
         </button>
       </div>
-
+      
       {/* Debug panel */}
-      <div
-        style={{
-          marginTop: "1rem",
-          border: "1px solid #ccc",
-          padding: "0.5rem",
-          background: "#fafafa",
-        }}
-      >
-        <h4 style={{ display: "inline-block", margin: 0 }}>
-          ⚙️ Debug
-        </h4>
-        <button
-          style={{
-            float: "right",
-            background: "#eee",
-            color: "#444",
-            padding: "0.1rem 0.7rem",
-            fontSize: "0.9rem",
-            border: "none",
-            borderRadius: 4,
-            cursor: "pointer",
-          }}
-          onClick={() => setDebugOpen((d) => !d)}
+      <div className="mt-4 border border-gray-200 rounded-md overflow-hidden">
+        <div 
+          className="bg-gray-100 px-4 py-2 flex justify-between items-center cursor-pointer" 
+          onClick={() => setDebugOpen(prev => !prev)}
         >
-          {debugOpen ? "Masquer Debug" : "Afficher Debug"}
-        </button>
+          <h3 className="text-sm font-medium text-gray-700 flex items-center">
+            <FiSettings className="mr-2" /> Debug
+          </h3>
+          <span className="text-sm text-gray-500">
+            {debugOpen ? "Masquer" : "Afficher"}
+          </span>
+        </div>
+        
         {debugOpen && (
-          <pre
-            style={{
-              background: "#f7f7f7",
-              padding: "0.5rem",
-              overflow: "auto",
-              maxHeight: 200,
-              marginTop: 8,
-              whiteSpace: "pre-wrap",
-            }}
-          >
-            {debugInfo}
-          </pre>
+          <div className="p-4 bg-gray-50">
+            <pre className="text-xs overflow-auto max-h-60 bg-white p-2 rounded border border-gray-200">
+              {debugInfo || "Chargement des informations de débogage..."}
+            </pre>
+          </div>
         )}
       </div>
     </div>

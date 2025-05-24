@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from "react";
 import { MdMessage, MdDescription, MdTrendingUp, MdAccessTime } from "react-icons/md";
 
-const API_BASE_URL = "http://127.0.0.1:8088";
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || "http://127.0.0.1:8088";
 
 export default function Dashboard() {
   const [stats, setStats] = useState({
@@ -16,16 +16,26 @@ export default function Dashboard() {
     documentTrend: []
   });
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
+        setIsLoading(true);
+        setError(null);
+        
         // Fetch conversations
         const conversationsRes = await fetch(`${API_BASE_URL}/conversations/`);
+        if (!conversationsRes.ok) {
+          throw new Error(`Failed to fetch conversations: ${conversationsRes.statusText}`);
+        }
         const conversations = await conversationsRes.json();
 
         // Fetch documents
         const documentsRes = await fetch(`${API_BASE_URL}/documents/`);
+        if (!documentsRes.ok) {
+          throw new Error(`Failed to fetch documents: ${documentsRes.statusText}`);
+        }
         const documents = await documentsRes.json();
 
         // Calculate statistics
@@ -33,13 +43,13 @@ export default function Dashboard() {
         const recentConvos = conversations.slice(-5).reverse();
         const recentDocs = documents.slice(-5).reverse();
 
-        // Calculate average response time (simplified example)
+        // Calculate average response time
         const responseTimes = conversations
           .filter(c => c.role === 'assistant')
           .map((c, i, arr) => {
             if (i === 0) return 0;
             const prevMsg = arr[i - 1];
-            return new Date(c.timestamp) - new Date(prevMsg.timestamp);
+            return prevMsg ? new Date(c.timestamp) - new Date(prevMsg.timestamp) : 0;
           })
           .filter(t => t > 0);
         
@@ -59,6 +69,7 @@ export default function Dashboard() {
         });
       } catch (error) {
         console.error("Error fetching dashboard data:", error);
+        setError(error.message || "Failed to load dashboard data");
       } finally {
         setIsLoading(false);
       }
@@ -86,6 +97,23 @@ export default function Dashboard() {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen p-4">
+        <div className="text-red-500 text-xl mb-2">Error</div>
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+          {error}
+        </div>
+        <button 
+          onClick={() => window.location.reload()} 
+          className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+        >
+          Retry
+        </button>
       </div>
     );
   }
@@ -125,48 +153,58 @@ export default function Dashboard() {
         {/* Recent Conversations */}
         <div className="bg-white rounded-xl shadow p-6">
           <h3 className="text-lg font-semibold mb-4">Conversations Récentes</h3>
-          <div className="space-y-4">
-            {stats.recentConversations.map((convo) => (
-              <div key={convo.id} className="flex items-start space-x-3 p-3 hover:bg-gray-50 rounded-lg">
-                <div className="flex-1">
-                  <div className="text-sm font-medium">{convo.user_name || 'Anonyme'}</div>
-                  <div className="text-sm text-gray-600 truncate">{convo.message}</div>
-                  <div className="text-xs text-gray-400 mt-1">
-                    {new Date(convo.timestamp).toLocaleString()}
+          {stats.recentConversations.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">Aucune conversation récente</div>
+          ) : (
+            <div className="space-y-4">
+              {stats.recentConversations.map((convo) => (
+                <div key={convo.id} className="flex items-start space-x-3 p-3 hover:bg-gray-50 rounded-lg">
+                  <div className="flex-1">
+                    <div className="text-sm font-medium">{convo.user_name || 'Anonyme'}</div>
+                    <div className="text-sm text-gray-600 truncate">{convo.message}</div>
+                    <div className="text-xs text-gray-400 mt-1">
+                      {new Date(convo.timestamp).toLocaleString()}
+                    </div>
+                  </div>
+                  <div className={`text-xs px-2 py-1 rounded-full ${
+                    convo.role === 'user' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'
+                  }`}>
+                    {convo.role}
                   </div>
                 </div>
-                <div className="text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-800">
-                  {convo.role}
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Recent Documents */}
         <div className="bg-white rounded-xl shadow p-6">
           <h3 className="text-lg font-semibold mb-4">Documents Récents</h3>
-          <div className="space-y-4">
-            {stats.recentDocuments.map((doc) => (
-              <div key={doc.id} className="flex items-start space-x-3 p-3 hover:bg-gray-50 rounded-lg">
-                <div className="flex-1">
-                  <div className="text-sm font-medium">{doc.title}</div>
-                  <div className="text-sm text-gray-600 truncate">{doc.description || 'Pas de description'}</div>
-                  <div className="text-xs text-gray-400 mt-1">
-                    Ajouté par {doc.uploaded_by} le {new Date(doc.uploaded_at).toLocaleString()}
+          {stats.recentDocuments.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">Aucun document récent</div>
+          ) : (
+            <div className="space-y-4">
+              {stats.recentDocuments.map((doc) => (
+                <div key={doc.id} className="flex items-start space-x-3 p-3 hover:bg-gray-50 rounded-lg">
+                  <div className="flex-1">
+                    <div className="text-sm font-medium">{doc.title}</div>
+                    <div className="text-sm text-gray-600 truncate">{doc.description || 'Pas de description'}</div>
+                    <div className="text-xs text-gray-400 mt-1">
+                      Ajouté par {doc.uploaded_by} le {new Date(doc.uploaded_at).toLocaleString()}
+                    </div>
                   </div>
+                  <a
+                    href={`${API_BASE_URL}/documents/file/${doc.filename}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:text-blue-800 text-sm"
+                  >
+                    Voir
+                  </a>
                 </div>
-                <a
-                  href={`${API_BASE_URL}/documents/file/${doc.filename}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-600 hover:text-blue-800 text-sm"
-                >
-                  Voir
-                </a>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -178,7 +216,7 @@ function MetricCard({ icon, title, value, trend }) {
   const isTrendingUp = showTrend && trend[trend.length - 1].count > trend[trend.length - 2].count;
 
   return (
-    <div className="bg-white rounded-xl shadow p-6">
+    <div className="bg-white rounded-xl shadow p-6 transition-all duration-300 hover:shadow-md">
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-3">
           {icon}

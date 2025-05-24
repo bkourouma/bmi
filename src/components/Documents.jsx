@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from "react";
 
-const API_BASE_URL = "http://127.0.0.1:8088";
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || "http://127.0.0.1:8088";
 
 const Documents = () => {
   // Document management state
@@ -13,7 +13,7 @@ const Documents = () => {
     title: "",
     description: "",
     file: null,
-    uploadedBy: "abc@abc.com" // Consider getting this from auth context
+    uploadedBy: localStorage.getItem("user_email") || "admin@example.com" // Get from auth context in real app
   });
   const [isUploading, setIsUploading] = useState(false);
   const [uploadMessage, setUploadMessage] = useState("");
@@ -43,7 +43,8 @@ const Documents = () => {
       }
       
       const data = await response.json();
-      setDocuments(data);
+      // Sort by upload date, newest first
+      setDocuments(data.sort((a, b) => new Date(b.uploaded_at) - new Date(a.uploaded_at)));
     } catch (err) {
       console.error("Error fetching documents:", err);
       setError("Erreur lors du chargement des documents");
@@ -98,12 +99,14 @@ const Documents = () => {
     // Validate form
     if (!formData.title.trim()) {
       setUploadMessage("Le titre est requis.");
+      setUploadSuccess(false);
       return;
     }
     
     const fileError = validateFile(formData.file);
     if (fileError) {
       setUploadMessage(fileError);
+      setUploadSuccess(false);
       return;
     }
 
@@ -154,6 +157,7 @@ const Documents = () => {
     } catch (err) {
       console.error("Upload error:", err);
       setUploadMessage(`Erreur: ${err.message}`);
+      setUploadSuccess(false);
     } finally {
       setIsUploading(false);
     }
@@ -254,9 +258,15 @@ const Documents = () => {
    */
   const formatDate = (dateString) => {
     try {
-      return new Date(dateString).toLocaleDateString("fr-FR");
+      return new Date(dateString).toLocaleDateString("fr-FR", {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
     } catch {
-      return dateString.split("T")[0];
+      return dateString ? dateString.split("T")[0] : "";
     }
   };
 
@@ -267,8 +277,11 @@ const Documents = () => {
 
   if (isLoading) {
     return (
-      <div className="flex justify-center items-center p-8">
-        <div className="text-lg text-gray-600">Chargement des documents...</div>
+      <div className="flex justify-center items-center p-8 min-h-screen">
+        <div className="flex flex-col items-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mb-4"></div>
+          <div className="text-lg text-gray-600">Chargement des documents...</div>
+        </div>
       </div>
     );
   }
@@ -315,7 +328,7 @@ const Documents = () => {
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label htmlFor="title" className="block text-sm font-medium text-gray-700 mb-1">
-                  Titre *
+                  Titre <span className="text-red-500">*</span>
                 </label>
                 <input
                   id="title"
@@ -331,7 +344,7 @@ const Documents = () => {
               
               <div>
                 <label htmlFor="file" className="block text-sm font-medium text-gray-700 mb-1">
-                  Fichier PDF *
+                  Fichier PDF <span className="text-red-500">*</span>
                 </label>
                 <input
                   id="file"
@@ -365,7 +378,7 @@ const Documents = () => {
               <button
                 type="submit"
                 disabled={isUploading}
-                className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
               >
                 {isUploading ? (
                   <>
@@ -458,7 +471,7 @@ const Documents = () => {
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {documents.map((doc) => (
-                    <tr key={doc.id} className="hover:bg-gray-50">
+                    <tr key={doc.id} className="hover:bg-gray-50 transition-colors duration-150">
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm font-medium text-gray-900">
                           {doc.title}
@@ -488,13 +501,13 @@ const Documents = () => {
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                         <button
                           onClick={() => openEditModal(doc)}
-                          className="text-indigo-600 hover:text-indigo-900 mr-4"
+                          className="text-indigo-600 hover:text-indigo-900 mr-4 transition-colors duration-150"
                         >
                           Modifier
                         </button>
                         <button
                           onClick={() => handleDelete(doc.id, doc.title)}
-                          className="text-red-600 hover:text-red-900"
+                          className="text-red-600 hover:text-red-900 transition-colors duration-150"
                         >
                           Supprimer
                         </button>
@@ -520,7 +533,7 @@ const Documents = () => {
               <div className="px-6 py-4 space-y-4">
                 <div>
                   <label htmlFor="edit-title" className="block text-sm font-medium text-gray-700 mb-1">
-                    Titre *
+                    Titre <span className="text-red-500">*</span>
                   </label>
                   <input
                     id="edit-title"
@@ -549,13 +562,13 @@ const Documents = () => {
               <div className="px-6 py-4 bg-gray-50 flex justify-end space-x-3 rounded-b-lg">
                 <button
                   onClick={closeEditModal}
-                  className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                  className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-150"
                 >
                   Annuler
                 </button>
                 <button
                   onClick={saveEdit}
-                  className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-150"
                 >
                   Enregistrer
                 </button>
