@@ -25,10 +25,8 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-        working-directory: ./webUi/front
 
-      - name: Inject production env and build
-        working-directory: ./webUi/front
+      - name: Inject production env & build
         run: |
           echo "REACT_APP_API_BASE_URL=${{ secrets.REACT_APP_API_BASE_URL }}" > .env.production
           npm run build
@@ -38,5 +36,6 @@ jobs:
         with:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_GRAY_FLOWER_082A73C10 }}
           action: upload
-          app_location: "./webUi/front/build"
-          skip_app_build: true
+          app_location: "/"          # code is at repo root
+          skip_app_build: true       # we already built it
+          output_location: "build"   # CRA’s output
